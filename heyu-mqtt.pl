@@ -25,15 +25,18 @@ sub receive_mqtt_set {
     my ($topic, $message) = @_;
     $topic =~ m{\Q$config->{mqtt_prefix}\E/([A-Z]\d+)/set};
     my $device = $1;
-    if ($message =~ m{^on$|^off$}i) {
+    if ($device == "raw") { # send 'raw' message, for example "xpreset o3 32" 
+        AE::log info => "sending heuy commmand $message";
+        system($config->{heyu_cmd}, lc $message);
+    } elsif ($message =~ m{^on$|^off$}i) {
         AE::log info => "switching device $device $message";
         system($config->{heyu_cmd}, lc $message, $device);
-    }
+    } 
 }
 
 sub send_mqtt_status {
-    my ($device, $status) = @_;
-    $mqtt->publish(topic => "$config->{mqtt_prefix}/$device", message => sprintf('{"state":"%s"}', $status ? 'ON' : 'OFF'), retain => scalar($device =~ $config->{mqtt_retain_re}));
+    my ($device, $status, $dimlevel) = @_;
+    $mqtt->publish(topic => "$config->{mqtt_prefix}/$device", message => sprintf('{"device":"%s", "state":"%s", "level":"%s"}',$device, $status ? 'ON' : 'OFF',$dimlevel), retain => scalar($device =~ $config->{mqtt_retain_re}));
 }
 
 my $addr_queue = {};
@@ -49,20 +52,25 @@ sub process_heyu_line {
         my ($cmd, $house) = ($1, $2);
         if ($addr_queue->{$house}) {
             for my $k (keys %{$addr_queue->{$house}}) {
-                process_heyu_cmd(lc $cmd, "$house$k");
+                process_heyu_cmd(lc $cmd, "$house$k", -1);
             }
             delete $addr_queue->{$house};
         }
+    } elsif ($line =~ m{  \S+ func\s+(\w+) : hu ([A-Z])(\d+)  level (\d+)}) {                                                                                                                         
+	my ($cmd, $house, $unit, $level) = ($1, $2, $3, $4);                                                                                                                                               
+	process_heyu_cmd(lc $cmd, "$house$unit", $level);                                                                                                                              
     }
 }
 
 sub process_heyu_cmd {
-    my ($cmd, $device) = @_;
+    my ($cmd, $device, $level) = @_;
     AE::log info => "processing $device: $cmd";
     if ($cmd eq 'on') {
         send_mqtt_status($device, 1);
     } elsif ($cmd eq 'off') {
         send_mqtt_status($device, 0);
+    } elsif ($cmd eq 'xpreset') {
+        send_mqtt_status($device, 1, $level);
     }
 }
 
