@@ -23,9 +23,9 @@ my $mqtt = AnyEvent::MQTT->new(
 
 sub receive_mqtt_set {
     my ($topic, $message) = @_;
-    $topic =~ m{\Q$config->{mqtt_prefix}\E/([A-Z]\d+)/set};
+    $topic =~ m{\Q$config->{mqtt_prefix}\E/(.*)/set};
     my $device = $1;
-    if ($device == "raw") { # send 'raw' message, for example "xpreset o3 32" 
+    if ($device eq "raw") { # send 'raw' message, for example "xpreset o3 32" 
         AE::log info => "sending heuy commmand $message";
         system($config->{heyu_cmd}, lc $message);
     } elsif ($message =~ m{^on$|^off$}i) {
